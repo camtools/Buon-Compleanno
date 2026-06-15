@@ -176,7 +176,11 @@ function startGame() {
   girl.x = W / 2;
   scoreEl.textContent = score;
 }
-function resetGame() { state = 'title'; }
+function resetGame() {
+  state = 'title';
+  score = 0;
+  scoreEl.textContent = score;
+}
 
 function spawnCandle() {
   const size = W * 0.045 + Math.random() * W * 0.02;
@@ -363,7 +367,7 @@ function drawGirl() {
   ctx.fill();
 
   // hair
-  ctx.fillStyle = '#ffcc33';
+  ctx.fillStyle = '#5b3a29';
   ctx.beginPath(); ctx.arc(x - w * 0.28, top + h * 0.26, w * 0.13, 0, Math.PI * 2); ctx.fill();
   ctx.beginPath(); ctx.arc(x + w * 0.28, top + h * 0.26, w * 0.13, 0, Math.PI * 2); ctx.fill();
   ctx.beginPath();
@@ -457,17 +461,18 @@ function drawTitle() {
 
   ctx.fillStyle = '#ff7b00';
   ctx.font = `${Math.floor(W * 0.045)}px 'Press Start 2P'`;
-  ctx.fillText('26 ANNI - EDIZIONE ARCADE', W / 2, H * 0.5);
+  ctx.fillText('26 ANNI', W / 2, H * 0.5);
+  ctx.fillText('EDIZIONE ARCADE', W / 2, H * 0.5 + W * 0.055);
 
   ctx.fillStyle = '#fff';
   ctx.font = `${Math.floor(W * 0.032)}px 'Press Start 2P'`;
-  ctx.fillText('RACCOGLI TUTTE LE 26', W / 2, H * 0.6);
-  ctx.fillText('CANDELINE!', W / 2, H * 0.6 + W * 0.06);
+  ctx.fillText('RACCOGLI TUTTE LE 26', W / 2, H * 0.63);
+  ctx.fillText('CANDELINE!', W / 2, H * 0.63 + W * 0.06);
 
   if (Math.floor(time / 20) % 2 === 0) {
     ctx.fillStyle = '#ffe600';
     ctx.font = `${Math.floor(W * 0.04)}px 'Press Start 2P'`;
-    ctx.fillText('TOCCA PER INIZIARE', W / 2, H * 0.8);
+    ctx.fillText('TOCCA PER INIZIARE', W / 2, H * 0.82);
   }
 }
 
@@ -527,7 +532,17 @@ function loop() {
 }
 
 resize();
-window.addEventListener('resize', resize);
+let resizePending = false;
+function scheduleResize() {
+  if (resizePending) return;
+  resizePending = true;
+  requestAnimationFrame(() => { resizePending = false; resize(); });
+}
+window.addEventListener('resize', scheduleResize);
+window.addEventListener('orientationchange', scheduleResize);
+if (window.ResizeObserver) {
+  new ResizeObserver(scheduleResize).observe(stage);
+}
 loop();
 </script>
 </body>
