@@ -443,10 +443,14 @@ function drawTitle() {
 
   ctx.textAlign = 'center';
   const hue = (time * 2) % 360;
+  ctx.font = `${Math.floor(W * 0.085)}px 'Press Start 2P'`;
+  ctx.lineWidth = Math.max(3, W * 0.012);
+  ctx.strokeStyle = '#1a0510';
+  ctx.strokeText('BUON', W / 2, H * 0.3);
+  ctx.strokeText('COMPLEANNO', W / 2, H * 0.3 + W * 0.11);
   ctx.fillStyle = `hsl(${hue},100%,60%)`;
   ctx.shadowColor = `hsl(${hue},100%,60%)`;
   ctx.shadowBlur = 12;
-  ctx.font = `${Math.floor(W * 0.085)}px 'Press Start 2P'`;
   ctx.fillText('BUON', W / 2, H * 0.3);
   ctx.fillText('COMPLEANNO', W / 2, H * 0.3 + W * 0.11);
   ctx.shadowBlur = 0;
@@ -473,14 +477,18 @@ function drawWin() {
 
   const hue = (time * 3) % 360;
   ctx.textAlign = 'center';
-  ctx.fillStyle = `hsl(${hue},100%,60%)`;
-  ctx.shadowColor = `hsl(${hue},100%,60%)`;
-  ctx.shadowBlur = 14;
   ctx.font = `${Math.floor(W * 0.09)}px 'Press Start 2P'`;
   const scale = 1 + 0.05 * Math.sin(time * 0.15);
   ctx.save();
   ctx.translate(W / 2, H * 0.34);
   ctx.scale(scale, scale);
+  ctx.lineWidth = Math.max(3, W * 0.013);
+  ctx.strokeStyle = '#1a0510';
+  ctx.strokeText('BUON', 0, 0);
+  ctx.strokeText('COMPLEANNO!', 0, W * 0.1);
+  ctx.fillStyle = `hsl(${hue},100%,60%)`;
+  ctx.shadowColor = `hsl(${hue},100%,60%)`;
+  ctx.shadowBlur = 14;
   ctx.fillText('BUON', 0, 0);
   ctx.fillText('COMPLEANNO!', 0, W * 0.1);
   ctx.restore();
@@ -491,7 +499,7 @@ function drawWin() {
   ctx.fillText('26 CANDELINE RACCOLTE!', W / 2, H * 0.58);
 
   if (Math.floor(time / 20) % 2 === 0) {
-    ctx.fillStyle = '#ff7b00';
+    ctx.fillStyle = '#ffe066';
     ctx.font = `${Math.floor(W * 0.04)}px 'Press Start 2P'`;
     ctx.fillText('TOCCA PER RIGIOCARE', W / 2, H * 0.7);
   }
