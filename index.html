@@ -1,0 +1,526 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Buon Compleanno 26 - Arcade</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --neon-cyan:#ff7b00;
+    --neon-pink:#ff3b3b;
+    --neon-yellow:#ffe066;
+  }
+  *{ box-sizing:border-box; }
+  html,body{
+    margin:0; height:100%; background:#140404;
+    display:flex; align-items:center; justify-content:center;
+    font-family:'Press Start 2P', monospace; color:#fff;
+    overflow:hidden; touch-action:none; -webkit-tap-highlight-color: transparent;
+  }
+  #wrap{
+    display:flex; flex-direction:column; align-items:center; gap:10px;
+    width:100%; max-width:480px; padding:10px;
+  }
+  #hud{
+    width:100%; text-align:center; font-size:13px; letter-spacing:2px;
+    color: var(--neon-cyan);
+    text-shadow:0 0 6px var(--neon-cyan), 0 0 14px rgba(255,123,0,0.6);
+  }
+  #stage{
+    position:relative; width:100%;
+    border:3px solid var(--neon-cyan);
+    border-radius:6px;
+    box-shadow:0 0 14px var(--neon-cyan), inset 0 0 24px rgba(255,123,0,0.25);
+    overflow:hidden;
+    background:#000;
+  }
+  canvas{ display:block; }
+  #scan{
+    position:absolute; inset:0; pointer-events:none;
+    background:repeating-linear-gradient(
+      to bottom,
+      rgba(255,255,255,0.05) 0px,
+      rgba(255,255,255,0.05) 1px,
+      transparent 1px,
+      transparent 3px
+    );
+    mix-blend-mode:overlay;
+  }
+  #controls{
+    display:flex; justify-content:space-between; width:100%; gap:14px;
+  }
+  .ctrl-btn{
+    flex:1; padding:18px 0; font-family:'Press Start 2P', monospace;
+    font-size:22px; color:var(--neon-pink); background:#1a0030;
+    border:3px solid var(--neon-pink); border-radius:8px;
+    box-shadow:0 0 8px rgba(255,59,59,0.7);
+    user-select:none; -webkit-user-select:none;
+  }
+  .ctrl-btn:active{ background:var(--neon-pink); color:#1a0030; }
+  #hint{
+    font-size:9px; text-align:center; color:#ffb380; letter-spacing:1px; opacity:0.85;
+    line-height:1.6;
+  }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="hud">CANDELINE: <span id="score">0</span> / 26</div>
+  <div id="stage">
+    <canvas id="game"></canvas>
+    <div id="scan"></div>
+  </div>
+  <div id="controls">
+    <button class="ctrl-btn" id="leftBtn">◀</button>
+    <button class="ctrl-btn" id="rightBtn">▶</button>
+  </div>
+  <div id="hint">FRECCE O PULSANTI PER MUOVERSI<br>TOCCA LO SCHERMO PER INIZIARE / RIGIOCARE</div>
+</div>
+<script>
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const stage = document.getElementById('stage');
+const scoreEl = document.getElementById('score');
+
+const TOTAL = 26;
+let W = 0, H = 0;
+
+const girl = { x:0, y:0, w:60, h:80, speed:4.2 };
+
+let state = 'title'; // title | playing | win
+let score = 0;
+let fallSpeed = 1.6, spawnInterval = 70, spawnTimer = 0;
+let time = 0;
+
+let candles = [];
+let sparkles = [];
+let confetti = [];
+let stars = [];
+
+for (let i = 0; i < 60; i++) {
+  stars.push({ x: Math.random(), y: Math.random() * 0.6, r: Math.random() * 1.5 + 0.5, p: Math.random() * Math.PI * 2 });
+}
+
+function resize() {
+  const dpr = window.devicePixelRatio || 1;
+  const cssW = stage.clientWidth;
+  const cssH = Math.floor(Math.min(window.innerHeight * 0.62, cssW * 1.4));
+  stage.style.height = cssH + 'px';
+  W = cssW; H = cssH;
+
+  canvas.width = Math.floor(W * dpr);
+  canvas.height = Math.floor(H * dpr);
+  canvas.style.width = W + 'px';
+  canvas.style.height = H + 'px';
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+  girl.w = Math.max(46, W * 0.16);
+  girl.h = girl.w * 1.35;
+  girl.y = H - 12;
+  girl.x = Math.min(Math.max(girl.x || W / 2, girl.w / 2), W - girl.w / 2);
+}
+
+// ---------- input ----------
+const keys = {};
+window.addEventListener('keydown', e => {
+  keys[e.key] = true;
+  if (e.key === ' ' || e.key === 'Enter') {
+    if (state === 'title') startGame();
+    else if (state === 'win') resetGame();
+  }
+});
+window.addEventListener('keyup', e => { keys[e.key] = false; });
+
+function bindHold(el, key) {
+  const on = e => { e.preventDefault(); keys[key] = true; };
+  const off = e => { e.preventDefault(); keys[key] = false; };
+  el.addEventListener('pointerdown', on);
+  el.addEventListener('pointerup', off);
+  el.addEventListener('pointerleave', off);
+  el.addEventListener('pointercancel', off);
+}
+bindHold(document.getElementById('leftBtn'), 'ArrowLeft');
+bindHold(document.getElementById('rightBtn'), 'ArrowRight');
+
+stage.addEventListener('pointerdown', () => {
+  if (state === 'title') startGame();
+  else if (state === 'win') resetGame();
+});
+
+// ---------- audio ----------
+let audioCtx;
+function playTone(freq, dur = 0.08, type = 'square', vol = 0.15) {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  const o = audioCtx.createOscillator();
+  const g = audioCtx.createGain();
+  o.type = type; o.frequency.value = freq;
+  g.gain.value = vol;
+  o.connect(g); g.connect(audioCtx.destination);
+  o.start();
+  g.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + dur);
+  o.stop(audioCtx.currentTime + dur);
+}
+function playCatch() { playTone(880, 0.07, 'square', 0.14); }
+function playWin() {
+  [523, 659, 784, 1046].forEach((f, i) => setTimeout(() => playTone(f, 0.16, 'square', 0.18), i * 130));
+}
+
+// ---------- game state ----------
+function startGame() {
+  state = 'playing';
+  score = 0;
+  candles = []; sparkles = []; confetti = [];
+  fallSpeed = 1.6; spawnInterval = 70; spawnTimer = 0;
+  girl.x = W / 2;
+  scoreEl.textContent = score;
+}
+function resetGame() { state = 'title'; }
+
+function spawnCandle() {
+  const size = W * 0.045 + Math.random() * W * 0.02;
+  candles.push({
+    x: size + Math.random() * (W - size * 2),
+    y: -size,
+    size,
+    hue: Math.floor(Math.random() * 6),
+    flick: Math.random() * Math.PI * 2
+  });
+}
+
+function spawnSparkle(x, y) {
+  for (let i = 0; i < 8; i++) {
+    const a = Math.random() * Math.PI * 2;
+    const sp = 1 + Math.random() * 2;
+    sparkles.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: 20, max: 20 });
+  }
+}
+
+function spawnConfetti() {
+  confetti = [];
+  for (let i = 0; i < 90; i++) {
+    confetti.push({
+      x: Math.random() * W,
+      y: -Math.random() * H,
+      vx: (Math.random() - 0.5) * 1.5,
+      vy: 1 + Math.random() * 2.5,
+      size: 4 + Math.random() * 5,
+      hue: Math.floor(Math.random() * 360),
+      rot: Math.random() * Math.PI * 2,
+      vr: (Math.random() - 0.5) * 0.3
+    });
+  }
+}
+
+// ---------- update ----------
+function update() {
+  time++;
+
+  if (state === 'playing') {
+    if (keys['ArrowLeft'] || keys['a'] || keys['A']) girl.x -= girl.speed;
+    if (keys['ArrowRight'] || keys['d'] || keys['D']) girl.x += girl.speed;
+    girl.x = Math.min(Math.max(girl.x, girl.w / 2), W - girl.w / 2);
+
+    spawnTimer++;
+    if (spawnTimer >= spawnInterval) { spawnTimer = 0; spawnCandle(); }
+
+    const catchTop = girl.y - girl.h * 0.85;
+    const catchBottom = girl.y;
+
+    for (let i = candles.length - 1; i >= 0; i--) {
+      const c = candles[i];
+      c.y += fallSpeed;
+      c.flick += 0.3;
+
+      if (c.y >= catchTop && c.y <= catchBottom && Math.abs(c.x - girl.x) < girl.w * 0.5 + c.size * 0.4) {
+        spawnSparkle(c.x, c.y);
+        candles.splice(i, 1);
+        score++;
+        scoreEl.textContent = score;
+        playCatch();
+
+        if (score % 4 === 0) {
+          fallSpeed += 0.25;
+          spawnInterval = Math.max(28, spawnInterval - 4);
+        }
+        if (score >= TOTAL) {
+          state = 'win';
+          candles = [];
+          spawnConfetti();
+          playWin();
+        }
+        continue;
+      }
+      if (c.y - c.size > H) candles.splice(i, 1);
+    }
+  }
+
+  for (let i = sparkles.length - 1; i >= 0; i--) {
+    const s = sparkles[i];
+    s.x += s.vx; s.y += s.vy; s.life--;
+    if (s.life <= 0) sparkles.splice(i, 1);
+  }
+
+  if (state === 'win') {
+    for (const p of confetti) {
+      p.x += p.vx; p.y += p.vy; p.rot += p.vr;
+      if (p.y > H + 10) { p.y = -10; p.x = Math.random() * W; }
+    }
+  }
+}
+
+// ---------- drawing ----------
+function drawBackground() {
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, '#2b0a14');
+  g.addColorStop(0.55, '#7a1f1a');
+  g.addColorStop(1, '#140404');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, W, H);
+
+  for (const s of stars) {
+    const a = 0.4 + 0.6 * Math.abs(Math.sin(time * 0.02 + s.p));
+    ctx.fillStyle = `rgba(255,255,255,${a})`;
+    ctx.fillRect(s.x * W, s.y * H, s.r, s.r);
+  }
+
+  const sunY = H * 0.4;
+  const sunR = W * 0.28;
+  const sg = ctx.createLinearGradient(0, sunY - sunR, 0, sunY + sunR);
+  sg.addColorStop(0, '#ffe97a');
+  sg.addColorStop(0.5, '#ff8c42');
+  sg.addColorStop(1, '#ff3b3b');
+  ctx.fillStyle = sg;
+  ctx.beginPath();
+  ctx.arc(W / 2, sunY, sunR, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = '#2b0a14';
+  for (let i = 0; i < 5; i++) {
+    const yy = sunY - sunR * 0.55 + i * sunR * 0.28;
+    ctx.fillRect(W / 2 - sunR, yy, sunR * 2, sunR * 0.07);
+  }
+
+  const horizon = H * 0.62;
+  ctx.strokeStyle = 'rgba(255,123,0,0.55)';
+  ctx.lineWidth = 1;
+  for (let i = 0; i <= 10; i++) {
+    const f = i / 10;
+    const yy = horizon + (H - horizon) * f * f;
+    ctx.beginPath(); ctx.moveTo(0, yy); ctx.lineTo(W, yy); ctx.stroke();
+  }
+  for (let i = 0; i <= 10; i++) {
+    const x0 = W * (i / 10);
+    const x1 = W / 2 + (x0 - W / 2) * 0.15;
+    ctx.beginPath();
+    ctx.moveTo(x0, H);
+    ctx.lineTo(x1, horizon);
+    ctx.stroke();
+  }
+}
+
+function drawGirl() {
+  const { x, y, w, h } = girl;
+  const bob = Math.sin(time * 0.2) * 2;
+  const top = y - h + bob;
+
+  ctx.fillStyle = 'rgba(0,0,0,0.35)';
+  ctx.beginPath();
+  ctx.ellipse(x, y + 3, w * 0.5, 6, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // legs
+  ctx.fillStyle = '#ffd9b3';
+  ctx.fillRect(x - w * 0.18, top + h * 0.78, w * 0.12, h * 0.18);
+  ctx.fillRect(x + w * 0.06, top + h * 0.78, w * 0.12, h * 0.18);
+  // shoes
+  ctx.fillStyle = '#d62839';
+  ctx.fillRect(x - w * 0.2, top + h * 0.92, w * 0.16, h * 0.08);
+  ctx.fillRect(x + w * 0.04, top + h * 0.92, w * 0.16, h * 0.08);
+
+  // dress
+  ctx.fillStyle = '#ff8c1a';
+  ctx.beginPath();
+  ctx.moveTo(x - w * 0.18, top + h * 0.42);
+  ctx.lineTo(x + w * 0.18, top + h * 0.42);
+  ctx.lineTo(x + w * 0.32, top + h * 0.8);
+  ctx.lineTo(x - w * 0.32, top + h * 0.8);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = '#ffe9b0';
+  ctx.fillRect(x - w * 0.3, top + h * 0.6, w * 0.6, h * 0.06);
+
+  // arms
+  ctx.fillStyle = '#ffd9b3';
+  ctx.fillRect(x - w * 0.38, top + h * 0.45, w * 0.1, h * 0.22);
+  ctx.fillRect(x + w * 0.28, top + h * 0.45, w * 0.1, h * 0.22);
+
+  // head
+  ctx.fillStyle = '#ffd9b3';
+  ctx.beginPath();
+  ctx.arc(x, top + h * 0.22, w * 0.22, 0, Math.PI * 2);
+  ctx.fill();
+
+  // hair
+  ctx.fillStyle = '#ffcc33';
+  ctx.beginPath(); ctx.arc(x - w * 0.28, top + h * 0.26, w * 0.13, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(x + w * 0.28, top + h * 0.26, w * 0.13, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath();
+  ctx.arc(x, top + h * 0.16, w * 0.24, Math.PI, Math.PI * 2);
+  ctx.fill();
+
+  // party hat
+  ctx.fillStyle = '#ff7b00';
+  ctx.beginPath();
+  ctx.moveTo(x, top - h * 0.18);
+  ctx.lineTo(x - w * 0.16, top + h * 0.06);
+  ctx.lineTo(x + w * 0.16, top + h * 0.06);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = '#ffe600';
+  ctx.beginPath();
+  ctx.arc(x, top - h * 0.18, w * 0.07, 0, Math.PI * 2);
+  ctx.fill();
+
+  // face
+  ctx.fillStyle = '#1a1a1a';
+  ctx.fillRect(x - w * 0.09, top + h * 0.2, w * 0.05, w * 0.05);
+  ctx.fillRect(x + w * 0.05, top + h * 0.2, w * 0.05, w * 0.05);
+  ctx.strokeStyle = '#a8542e';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(x, top + h * 0.27, w * 0.08, 0.1 * Math.PI, 0.9 * Math.PI);
+  ctx.stroke();
+}
+
+const CANDLE_COLORS = ['#ff5e5e', '#5ef1ff', '#b07cff', '#ffd95e', '#7cffb0', '#ff9cf2'];
+function drawCandle(c) {
+  const { x, y, size } = c;
+  ctx.fillStyle = CANDLE_COLORS[c.hue];
+  ctx.fillRect(x - size * 0.2, y - size * 0.1, size * 0.4, size * 0.7);
+
+  ctx.fillStyle = 'rgba(255,255,255,0.5)';
+  ctx.fillRect(x - size * 0.2, y + size * 0.1, size * 0.4, size * 0.08);
+  ctx.fillRect(x - size * 0.2, y + size * 0.32, size * 0.4, size * 0.08);
+
+  ctx.fillStyle = '#3a2a1a';
+  ctx.fillRect(x - size * 0.03, y - size * 0.22, size * 0.06, size * 0.14);
+
+  const flick = 0.85 + 0.15 * Math.sin(c.flick);
+  ctx.fillStyle = '#ffd95e';
+  ctx.beginPath();
+  ctx.ellipse(x, y - size * 0.3, size * 0.14 * flick, size * 0.2 * flick, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#ff8a3d';
+  ctx.beginPath();
+  ctx.ellipse(x, y - size * 0.26, size * 0.08 * flick, size * 0.12 * flick, 0, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+function drawSparkles() {
+  for (const s of sparkles) {
+    const a = s.life / s.max;
+    ctx.fillStyle = `rgba(255,230,0,${a})`;
+    ctx.fillRect(s.x - 2, s.y - 2, 4, 4);
+  }
+}
+
+function drawConfetti() {
+  for (const p of confetti) {
+    ctx.save();
+    ctx.translate(p.x, p.y);
+    ctx.rotate(p.rot);
+    ctx.fillStyle = `hsl(${p.hue},90%,60%)`;
+    ctx.fillRect(-p.size / 2, -p.size / 2, p.size, p.size);
+    ctx.restore();
+  }
+}
+
+function drawTitle() {
+  ctx.fillStyle = 'rgba(5,1,15,0.55)';
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.textAlign = 'center';
+  const hue = (time * 2) % 360;
+  ctx.fillStyle = `hsl(${hue},100%,60%)`;
+  ctx.shadowColor = `hsl(${hue},100%,60%)`;
+  ctx.shadowBlur = 12;
+  ctx.font = `${Math.floor(W * 0.085)}px 'Press Start 2P'`;
+  ctx.fillText('BUON', W / 2, H * 0.3);
+  ctx.fillText('COMPLEANNO', W / 2, H * 0.3 + W * 0.11);
+  ctx.shadowBlur = 0;
+
+  ctx.fillStyle = '#ff7b00';
+  ctx.font = `${Math.floor(W * 0.045)}px 'Press Start 2P'`;
+  ctx.fillText('26 ANNI - EDIZIONE ARCADE', W / 2, H * 0.5);
+
+  ctx.fillStyle = '#fff';
+  ctx.font = `${Math.floor(W * 0.032)}px 'Press Start 2P'`;
+  ctx.fillText('RACCOGLI TUTTE LE 26', W / 2, H * 0.6);
+  ctx.fillText('CANDELINE!', W / 2, H * 0.6 + W * 0.06);
+
+  if (Math.floor(time / 20) % 2 === 0) {
+    ctx.fillStyle = '#ffe600';
+    ctx.font = `${Math.floor(W * 0.04)}px 'Press Start 2P'`;
+    ctx.fillText('TOCCA PER INIZIARE', W / 2, H * 0.8);
+  }
+}
+
+function drawWin() {
+  ctx.fillStyle = 'rgba(5,1,15,0.5)';
+  ctx.fillRect(0, 0, W, H);
+
+  const hue = (time * 3) % 360;
+  ctx.textAlign = 'center';
+  ctx.fillStyle = `hsl(${hue},100%,60%)`;
+  ctx.shadowColor = `hsl(${hue},100%,60%)`;
+  ctx.shadowBlur = 14;
+  ctx.font = `${Math.floor(W * 0.09)}px 'Press Start 2P'`;
+  const scale = 1 + 0.05 * Math.sin(time * 0.15);
+  ctx.save();
+  ctx.translate(W / 2, H * 0.34);
+  ctx.scale(scale, scale);
+  ctx.fillText('BUON', 0, 0);
+  ctx.fillText('COMPLEANNO!', 0, W * 0.1);
+  ctx.restore();
+  ctx.shadowBlur = 0;
+
+  ctx.fillStyle = '#fff';
+  ctx.font = `${Math.floor(W * 0.035)}px 'Press Start 2P'`;
+  ctx.fillText('26 CANDELINE RACCOLTE!', W / 2, H * 0.58);
+
+  if (Math.floor(time / 20) % 2 === 0) {
+    ctx.fillStyle = '#ff7b00';
+    ctx.font = `${Math.floor(W * 0.04)}px 'Press Start 2P'`;
+    ctx.fillText('TOCCA PER RIGIOCARE', W / 2, H * 0.7);
+  }
+}
+
+function draw() {
+  drawBackground();
+  if (state === 'title') {
+    drawTitle();
+  } else {
+    drawGirl();
+    candles.forEach(drawCandle);
+    drawSparkles();
+    if (state === 'win') {
+      drawConfetti();
+      drawWin();
+    }
+  }
+}
+
+function loop() {
+  update();
+  draw();
+  requestAnimationFrame(loop);
+}
+
+resize();
+window.addEventListener('resize', resize);
+loop();
+</script>
+</body>
+</html>
